@@ -1,0 +1,83 @@
+Andreea Prigoreanu
+321CA
+                                                                               .
+                                Tema 2 PCom                                    
+                     Aplicatie client-server TCP si UDP
+
+Tema contine urmatoarele fisiere:
+    - server.cpp - contine functionarea serverului
+    - subscriber.cpp - contine functionarea clientului
+    - helper.h - pentru macro-uri si structuri
+
+Structurile de date folosite pentru a organiza logica aplicatiei:
+- unordered_map<string, int> id_client_and_socket -> stocheaza perechi in care
+        cheia este id-ul unui client si valoarea este socketul sau
+- unordered_map<int, string> socket_and_client_id -> stocheaza perechi in care
+        cheia este socketul unui client si valoarea este id-ul sau
+- unordered_map<string, vector<subscriber>> topic_and_subscribers -> stocheaza
+        perechi in care cheia este numele unui topic si valoarea este un
+        vector ce retine toti subscriberii la acel topic
+// map to store pairs of id and unsend messages for sf = 1
+unordered_map<string, vector<tcp_message>> client_and_unsend_messages ->
+        stocheaza perechi in care cheia este id-ul unui client si valoarea este
+        un vector ce retine toate mesajele trimise de clientii udp cat timp
+        clientul a fost deconectat, pentru topicurile la care s-a abonat cu
+        sf = 1
+
+In server:
+    - se foloseste multiplexarea I/O pentru a gestiona comunicarea cu mai multi
+clienti.
+    - se creeaza socketi pentru conexiunea cu clientii TCP, cat si pentru
+conexiunea cu clientii UDP
+    - in cadrul unui while(1) se apeleaza functia select se parcurg toti
+socketii din multimea rezultata
+    - exista mai multe cazuri
+        1. se primeste comanda de exit de la stdin: serverul trimite catre toti
+    clientii mesajul "stop", ce le semnaleaza sa se inchida, dupa care se
+    inchide si el
+        2. se primeste mesaj de la un client udp:
+            -> converteste mesajul in mesaj pentru clientii tcp, interpretand
+            continutul mesajului in functie de tipul de date trimis
+            -> mesajul catre clientii tcp este pus in structura
+            tcp_message pentru a fi usor de interpretat de catre acestia
+            -> se parcurg toti subscriberii la topicul mesajului primit si daca
+            subscriberul este activ i se trimite mesajul, altfel salveaza in
+            coada client_and_unsend_messages daca s-a abonat cu sf = 1, pentru
+            a i se putea trimite mesajul la reconectare
+        3. se primeste cerere de conectare pe socketul de tcp:
+            -> serverul primeste de la client id-ul cu care vrea sa fie
+            retinut de server
+            -> daca id-ul clientului exista deja in id_client_and_socket si are
+            socketul activ, inseamna ca id-ul trimis este deja folosit si se
+            trimite pe socketul de pe care a venit cererea de conectare mesajul
+            "stop", ce ii semnaleaza clientului sa se inchida
+            -> daca clientul exista deja in id_client_and_socket si are
+            socketul inactiv, inseamna ca un client vrea sa se reconecteze si
+            se face update in map-uri cu noul socket
+            -> daca e client nou se introduce in id_client_and_socket si in
+            socket_and_client_id
+        4. se primeste o comanda de la un client tcp:
+            -> serevrul interpreteaza mesajul de la client cu ajutorul
+            structurii server_message
+            -> daca rezultatul functiei recv este 0, clientul s-a deconectat
+            si i se atribuie un socket negativ in id_client_and_socket
+            -> subscribe la un topic: se adauga un nou subscriber in
+            topic_and_subscribers la topicul cerut
+            -> unsubscribe de la un topic: se sterge subscriberul din
+            topic_and_subscribers la topicul cerut
+
+In client:
+    -> se trimite connect la server
+    -> se trimite id-ul
+    -> in cadrul unui while(1) se apeleaza functia select se verifica toate
+posibilitatile din multimea rezultata:
+    1. mesaj de la server:
+        -> daca se primeste mesajul "stop" clientul se inchide
+        -> altfel se primeste un mesaj de la un client udp, pe care clientul il
+        pune in structura tcp_message pentru a-l afisa
+    2. comanda de la stdin:
+        -> exit: clientul se inchide
+        -> subscribe: cu ajutorul structurii server_message se construieste
+        un mesaj de subscribe care este trimis serverului
+        -> unsubscribe: cu ajutorul structurii server_message se construieste
+        un mesaj de unsubscribe care este trimis serverului
